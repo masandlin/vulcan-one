@@ -43,7 +43,7 @@ func Start() {
 
 	router := gin.Default()
 
-	router.POST("/api/:network/:standard/:amount/:contract", func(c *gin.Context) {
+	router.POST("/api/:network/:standard/:amount/:contract/*xcollection", func(c *gin.Context) {
 		handleDynamicEndpoint(c, shared.Clients)
 	})
 
@@ -57,6 +57,7 @@ func handleDynamicEndpoint(c *gin.Context, clients map[string]*w3.Client) {
 	standard := c.Param("standard")
 	amountStr := c.Param("amount")
 	contract := c.Param("contract")
+	xcollection := c.Param("xcollection")
 
 	shared.ClientMutex.Lock()
 	client, exists := clients[network]
@@ -97,34 +98,18 @@ func handleDynamicEndpoint(c *gin.Context, clients map[string]*w3.Client) {
 	}
 
 	if req.Wallet != "" || len(req.Wallets) > 0 {
-		validateOwnership(c, network, client, contract, req, amountStr, standard)
+		validateOwnership(c, network, client, contract, req, amountStr, standard, xcollection)
 	} else {
 		c.JSON(http.StatusBadRequest, gin.H{"error": shared.ErrInvalidRequest})
 	}
 }
 
-func validateOwnership(c *gin.Context, network string, client *w3.Client, contractAddress string, wr WalletRequest, amount string, contractStandard string) {
-	var addresses []string
+func makeContractCalls(client *w3.Client, contractAddress string, addresses []string, contractStandard string, amount string) ([]*big.Int, []*big.Int, *uint8, error) {
 	var callRequests []w3types.Caller
-	var success bool
-	var erc20decimals *uint8
 	var fetchBalances []*big.Int
 	var erc1155TokenAmounts []*big.Int
-	var amountBigInt *big.Int
+	var contract20decimals uint8
 	var err error
-	decimalMultiplier := new(big.Int).SetInt64(1)
-	if wr.Wallet != "" {
-		addresses = append(addresses, wr.Wallet)
-	}
-	if len(wr.Wallets) > 0 {
-		addresses = append(addresses, wr.Wallets...)
-	}
-
-	// Support for AA operating EOAs later, right now, only FuturePass is supported on TRN.
-	switch network {
-	case "trn", "porcini":
-		addresses = trn.AddFuturePasses(addresses, *client)
-	}
 
 	funcBalanceOf := w3.MustNewFunc("balanceOf(address)", "uint256")
 	funcDecimals := w3.MustNewFunc("decimals()", "uint8")
@@ -132,7 +117,7 @@ func validateOwnership(c *gin.Context, network string, client *w3.Client, contra
 	switch contractStandard {
 	case "erc20", "token":
 		fetchBalances = make([]*big.Int, len(addresses))
-		callRequests = append(callRequests, eth.CallFunc(w3.A(contractAddress), funcDecimals).Returns(&erc20decimals))
+		callRequests = append(callRequests, eth.CallFunc(w3.A(contractAddress), funcDecimals).Returns(&contract20decimals))
 		for i, address := range addresses {
 			callRequests = append(callRequests, eth.CallFunc(w3.A(contractAddress), funcBalanceOf, w3.A(address)).Returns(&fetchBalances[i]))
 		}
@@ -142,6 +127,7 @@ func validateOwnership(c *gin.Context, network string, client *w3.Client, contra
 		for i, address := range addresses {
 			callRequests = append(callRequests, eth.CallFunc(w3.A(contractAddress), funcBalanceOf, w3.A(address)).Returns(&fetchBalances[i]))
 		}
+
 	case "sft", "erc1155":
 		var erc1155TokenIds []*big.Int
 		var erc1155AddressList []common.Address
@@ -151,7 +137,7 @@ func validateOwnership(c *gin.Context, network string, client *w3.Client, contra
 		erc1155AddressList, erc1155IDList, erc1155TokenAmounts = erc1155.GenerateCombinations(addresses, erc1155TokenIds, erc1155TokenAmounts)
 
 		if err != nil {
-			log.Println(err)
+			return nil, erc1155TokenAmounts, nil, err
 		}
 		fetchBalances = make([]*big.Int, len(addresses)*len(erc1155TokenIds))
 		callRequests = append(callRequests, eth.CallFunc(w3.A(contractAddress), funcBalanceOfBatchSFT, erc1155AddressList, erc1155IDList).Returns(&fetchBalances))
@@ -159,18 +145,127 @@ func validateOwnership(c *gin.Context, network string, client *w3.Client, contra
 
 	err = client.Call(callRequests...)
 	if err != nil {
-		if callErr, ok := err.(w3.CallErrors); ok {
-			log.Println("w3 error:", callErr)
-			log.Println("Other Error:", err)
-			c.JSON(500, gin.H{"w3 error": err.(w3.CallErrors)})
+		return nil, nil, nil, err
+	}
 
-		} else {
-			log.Println("Other Error:", err)
-			c.JSON(500, gin.H{"error": err})
+	return fetchBalances, erc1155TokenAmounts, &contract20decimals, nil
+}
+
+func SumFetchBalancessum(network string, fetchBalancessum []*big.Int, addresses []string, fpMap map[string]string) []*big.Int {
+	if network != "trn" {
+		return fetchBalancessum
+	}
+
+	summedBalances := make(map[string]*big.Int)
+
+	for i, address := range addresses {
+		fpAddress, isFP := fpMap[address]
+
+		if isFP {
+			if _, exist := summedBalances[fpAddress]; !exist {
+				summedBalances[fpAddress] = new(big.Int).Set(fetchBalancessum[i])
+			} else {
+				summedBalances[fpAddress].Add(summedBalances[fpAddress], fetchBalancessum[i])
+			}
+		}
+
+		if !isFP {
+			if _, exist := summedBalances[address]; !exist {
+				summedBalances[address] = new(big.Int).Set(fetchBalancessum[i])
+			} else {
+				summedBalances[address].Add(summedBalances[address], fetchBalancessum[i])
+			}
 		}
 	}
 
-	for i, balance := range fetchBalances {
+	var summedBalancessum []*big.Int
+	for _, balance := range summedBalances {
+		summedBalancessum = append(summedBalancessum, balance)
+	}
+
+	return summedBalancessum
+}
+
+func validateOwnership(c *gin.Context, network string, client *w3.Client, contractAddress string, wr WalletRequest, amount string, contractStandard string, crossCollection string) {
+	var addresses []string
+	var success bool
+	var erc20decimals *uint8
+	var fetchBalances []*big.Int
+	var xFetchBalances [][]*big.Int
+	var erc1155TokenAmounts []*big.Int
+	var amountBigInt *big.Int
+	var err error
+	var keys map[string]string
+	var adjustedBalances []*big.Int
+	var balances []*big.Int
+
+	decimalMultiplier := new(big.Int).SetInt64(1)
+	if wr.Wallet != "" {
+		addresses = append(addresses, wr.Wallet)
+	}
+	if len(wr.Wallets) > 0 {
+		addresses = append(addresses, wr.Wallets...)
+	}
+
+	switch network {
+	case "trn", "porcini":
+		addresses, keys = trn.AddFuturePasses(addresses, *client)
+	}
+
+	if crossCollection == "/x" {
+		xChainData := utils.GetCrosschainData(network, contractAddress, shared.Config.CrossChainCollections)
+
+		if xChainData != nil {
+			for _, data := range xChainData {
+				for network, address := range data {
+
+					client, exists := shared.Clients[network]
+					if !exists {
+						continue
+					}
+
+					balances, erc1155TokenAmounts, erc20decimals, err = makeContractCalls(client, address, addresses, contractStandard, amount)
+					if err != nil {
+						continue
+					}
+
+					xFetchBalances = append(xFetchBalances, balances)
+				}
+			}
+
+			fetchBalancessum := make([]*big.Int, len(addresses))
+			for i := range fetchBalancessum {
+				fetchBalancessum[i] = big.NewInt(0)
+			}
+
+			for _, xBalance := range xFetchBalances {
+				for i, balance := range xBalance {
+					fetchBalancessum[i].Add(fetchBalancessum[i], balance)
+				}
+			}
+
+			adjustedBalances = SumFetchBalancessum(network, fetchBalancessum, addresses, keys)
+		}
+	}
+
+	if crossCollection == "/" {
+		fetchBalances, erc1155TokenAmounts, erc20decimals, err = makeContractCalls(client, contractAddress, addresses, contractStandard, amount)
+		if err != nil {
+			if callErr, ok := err.(w3.CallErrors); ok {
+				log.Println("w3 error:", callErr)
+				log.Println("Other Error:", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"w3 error": err.(w3.CallErrors)})
+
+			} else {
+				log.Println("Other Error:", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err})
+			}
+		}
+
+		adjustedBalances = SumFetchBalancessum(network, fetchBalances, addresses, keys)
+	}
+
+	for i, balance := range adjustedBalances {
 
 		switch contractStandard {
 		case "erc20", "token":

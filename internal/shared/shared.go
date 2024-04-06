@@ -14,9 +14,10 @@ var (
 )
 
 type Configuration struct {
-	EVMnetworks    map[string][]string `json:"evmNetworks"`
-	Port           string              `json:"port"`
-	ValidStandards []string            `json:"validStandards"`
+	EVMnetworks           map[string][]string          `json:"evmNetworks"`
+	Port                  string                       `json:"port"`
+	ValidStandards        []string                     `json:"validStandards"`
+	CrossChainCollections map[string]map[string]string `json:"crossChainCollections"`
 }
 
 const (

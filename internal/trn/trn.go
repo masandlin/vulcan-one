@@ -17,8 +17,9 @@ var (
 	addressNull       = "0x0000000000000000000000000000000000000000"
 )
 
-func AddFuturePasses(addresses []string, client w3.Client) []string {
+func AddFuturePasses(addresses []string, client w3.Client) ([]string, map[string]string) {
 	var callRequests []w3types.Caller
+	fpMap := make(map[string]string)
 	fp := make([]*common.Address, len(addresses))
 	funcGetFuturePassOfEOA := w3.MustNewFunc("futurepassOf(address)", "address")
 	var fpAddresses []string
@@ -32,15 +33,13 @@ func AddFuturePasses(addresses []string, client w3.Client) []string {
 	}
 
 	for i, fpAddress := range fp {
-		log.Println(i)
 		if fpAddress.Hex() != addressNull {
+			fpMap[fpAddress.Hex()] = addresses[i]
 			fpAddresses = append(fpAddresses, fpAddress.Hex())
 		}
 	}
-
 	addresses = append(addresses, fpAddresses...)
-
-	return addresses
+	return addresses, fpMap
 }
 
 func AssetIdToERC20Address(assetId string) string {

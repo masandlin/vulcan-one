@@ -75,3 +75,48 @@ func TestLoadConfiguration(t *testing.T) {
 	assert.Error(t, err, "Should return an error")
 	assert.Nil(t, invalidConfig, "Invalid configuration should be nil")
 }
+
+func TestCountElements(t *testing.T) {
+	// Test case 1: Empty lists
+	emptyLists := [][]*big.Int{}
+	emptyCounts := utils.CountElements(emptyLists)
+	assert.NotNil(t, emptyCounts, "Counts should not be nil")
+	assert.Empty(t, emptyCounts, "Counts should be empty")
+
+	// Test case 2: Non-empty lists
+	lists := [][]*big.Int{
+		[]*big.Int{big.NewInt(955), big.NewInt(921), big.NewInt(921)},
+		[]*big.Int{big.NewInt(900)},
+	}
+	counts := utils.CountElements(lists)
+	assert.NotNil(t, counts, "Counts should not be nil")
+	assert.Len(t, counts, 2, "Counts should have length 2")
+	assert.Equal(t, big.NewInt(3), counts[0], "First count should be 3")
+	assert.Equal(t, big.NewInt(1), counts[1], "Second count should be 1")
+}
+func TestGetCrosschainData(t *testing.T) {
+	// Test case 1: Matching network and contract
+	crossChainCollections := map[string]map[string]string{
+		"1": {"arb": "0x3", "eth": "0x1", "trn": "0x2", "none": "0x8"},
+		"2": {"eth": "0x4", "frame": "0x6", "trn": "0x5"},
+	}
+
+	expected1 := map[string]utils.NetworkContractMap{"1": {"arb": "0x3", "eth": "0x1", "trn": "0x2", "none": "0x8"}}
+	actual1 := utils.GetCrosschainData("eth", "0x1", crossChainCollections)
+	assert.Equal(t, expected1, actual1, "Should match network and contract")
+
+	// Test case 2: Matching network but different contract
+	expected2 := map[string]utils.NetworkContractMap{"1": {"arb": "0x3", "eth": "0x1", "trn": "0x2", "none": "0x8"}}
+	actual2 := utils.GetCrosschainData("trn", "0x2", crossChainCollections)
+	assert.Equal(t, expected2, actual2, "Should match network but different contract")
+
+	// Test case 3: No matching network
+	expected3 := map[string]utils.NetworkContractMap{"2": {"eth": "0x4", "frame": "0x6", "trn": "0x5"}}
+	actual3 := utils.GetCrosschainData("frame", "0x6", crossChainCollections)
+	assert.Equal(t, expected3, actual3, "Should not match network")
+
+	// Test case 4: Unknown network
+	expected4 := map[string]utils.NetworkContractMap(nil)
+	actual4 := utils.GetCrosschainData("unknown", "0x7", crossChainCollections)
+	assert.Equal(t, expected4, actual4, "Should handle unknown network")
+}
