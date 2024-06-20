@@ -19,6 +19,26 @@
           "eth": "0x6bCa6de2dbDc4E0d41f7273011785ea16Ba47182",
           "trn": "0xAaaAAAaa00000464000000000000000000000000"
         },
+      "partybears": {
+          "eth": "0x35471f47c3C0BC5FC75025b97A19ECDDe00F78f8",
+          "trn": "0xaAaaAaaA00004464000000000000000000000000"
+        },
+      "flufs": {
+          "eth": "0xCcc441ac31f02cD96C153DB6fd5Fe0a2F4e6A68d",
+          "trn": "0xAaAaAAaa00003064000000000000000000000000"
+        },
+      "seekers": {
+          "eth": "0xaAF03a65CbD8f01b512Cd8d530a675b3963dE255",
+          "trn": "0xAAaaAAAA00008464000000000000000000000000"
+        },
+      "asto": {
+          "eth": "0x823556202e86763853b40e9cDE725f412e294689",
+          "trn": "0xCccCccCc00001064000000000000000000000000"
+        },
+      "sylo": {
+          "eth": "0xf293d23bf2cdc05411ca0eddd588eb1977e8dcd4",
+          "trn": "0xcCcCCCCc00000864000000000000000000000000"
+        },
       "root": {
           "trn": "0xcCcCCccC00000001000000000000000000000000",
           "eth": "0xa3d4BEe77B05d4a0C943877558Ce21A763C4fa29"
